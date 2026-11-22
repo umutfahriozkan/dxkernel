@@ -70,18 +70,32 @@ jobs:
               fs.rmSync(entry, { recursive: true, force: true });
             }
 
-            // 4. Download NuGet package directly into repo root, unzip, and delete .nupkg
+            // 4. Download NuGet package, extract only build/native/{bin,include,src} to root, and clean up
             const nupkgFile = `${PACKAGE}.${latestVersion}.nupkg`;
             const pkgRes = await fetch(`${API}/${latestVersion}/${nupkgFile}`);
             if (!pkgRes.ok) throw new Error(`Failed to download package ${latestVersion}: ${pkgRes.status}`);
 
             fs.writeFileSync(nupkgFile, Buffer.from(await pkgRes.arrayBuffer()));
-            execFileSync('unzip', ['-q', '-o', nupkgFile, '-d', '.']);
+            execFileSync('unzip', [
+              '-q', '-o', nupkgFile,
+              'build/native/bin/*',
+              'build/native/include/*',
+              'build/native/src/*',
+              '-d', '.'
+            ]);
             fs.rmSync(nupkgFile, { force: true });
+
+            // Move bin, include, src to repository root and delete the empty build folder
+            for (const dir of ['bin', 'include', 'src']) {
+              if (fs.existsSync(`build/native/${dir}`)) {
+                fs.renameSync(`build/native/${dir}`, `./${dir}`);
+              }
+            }
+            fs.rmSync('build', { recursive: true, force: true });
 
             // 5. Commit and push
             git('config', 'user.name', 'github-actions[bot]');
-            git('config', 'user.email', '41898282+github-actions[bot]@://github.com');
+            git('config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com');
             git('add', '-A');
 
             if (!git('status', '--porcelain')) {

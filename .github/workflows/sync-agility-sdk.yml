@@ -29,7 +29,7 @@ jobs:
             const { execFileSync } = require('child_process');
 
             const PACKAGE = 'microsoft.direct3d.d3d12';
-            const API = `https://nuget.org{PACKAGE}`;
+            const API = `https://api.nuget.org/v3-flatcontainer/${PACKAGE}`;
             const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
 
             // 1. Fetch the single latest stable version from NuGet

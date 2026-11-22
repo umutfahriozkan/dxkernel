@@ -1,0 +1,111 @@
+
+name: Sync DirectX 12 Agility SDK
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 */6 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: agility-sdk-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref_name }}
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl jq unzip
+
+      - name: Sync latest stable Agility SDK
+        shell: bash
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          PACKAGE="microsoft.direct3d.d3d12"
+          API="https://api.nuget.org/v3-flatcontainer/$PACKAGE"
+
+          WORK="$(mktemp -d)"
+          trap 'rm -rf "$WORK"' EXIT
+
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+          echo "Fetching NuGet versions..."
+
+          curl -fsSL "$API/index.json" \
+            | jq -r '.versions[]' > "$WORK/all.txt"
+
+          # Stable versions only, newest first.
+          grep -v '-' "$WORK/all.txt" \
+            | sort -V -r -u > "$WORK/versions.txt"
+
+          echo "Looking for the newest missing version..."
+
+          VERSION=""
+
+          while IFS= read -r CANDIDATE; do
+            [[ -z "$CANDIDATE" ]] && continue
+
+            if ! git log --format='%s' \
+              | grep -Fxq "$CANDIDATE"; then
+              VERSION="$CANDIDATE"
+              break
+            fi
+          done < "$WORK/versions.txt"
+
+          if [[ -z "$VERSION" ]]; then
+            echo "No new stable release found."
+            exit 0
+          fi
+
+          echo "Found new version: $VERSION"
+
+          NUPKG="$WORK/$VERSION.nupkg"
+          EXTRACT="$WORK/extract"
+
+          mkdir -p "$EXTRACT"
+
+          # Download the original NuGet package.
+          curl -fL --retry 3 \
+            "$API/$VERSION/$PACKAGE.$VERSION.nupkg" \
+            -o "$NUPKG"
+
+          # Extract package.
+          unzip -q "$NUPKG" -d "$EXTRACT"
+
+          # Remove everything except .git and .github.
+          find . -mindepth 1 -maxdepth 1 \
+            ! -name '.git' \
+            ! -name '.github' \
+            -exec rm -rf -- {} +
+
+          # Copy complete SDK package into repository root.
+          cp -a "$EXTRACT/." .
+
+          # Commit this release.
+          git add -A
+
+          git commit \
+            -m "$VERSION" \
+            -m "Sync Microsoft.Direct3D.D3D12 NuGet package."
+
+          # Push the new version.
+          git push origin "HEAD:$BRANCH"
+
+          echo "Successfully synchronized DirectX 12 Agility SDK $VERSION"

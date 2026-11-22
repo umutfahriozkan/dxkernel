@@ -59,7 +59,7 @@ jobs:
             const existingCommits = new Set(git('log', '--format=%s').split(/\r?\n/).filter(Boolean));
             if (existingCommits.has(latestVersion)) {
               core.info(`Already up to date (latest stable: ${latestVersion}).`);
-              return;
+              //return;
             }
 
             core.info(`Found new latest version: ${latestVersion}`);
